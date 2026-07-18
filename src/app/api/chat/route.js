@@ -5,6 +5,8 @@ import { writeFile, unlink } from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import prisma from '@/lib/prisma';
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
 // Initialize Hugging Face Inference client
 const hf = new HfInference(process.env.HF_TOKEN);
@@ -13,6 +15,11 @@ const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
 
 export async function POST(req) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+    }
+
     const formData = await req.formData();
     const messagesStr = formData.get('messages');
     const customSystemPrompt = formData.get('systemPrompt');
@@ -135,10 +142,17 @@ export async function POST(req) {
     if (!chatId || chatId === 'null') {
       const newChat = await prisma.chat.create({
         data: {
-          title: latestMessage.content ? latestMessage.content.substring(0, 30) + '...' : 'New Conversation'
+          title: latestMessage.content ? latestMessage.content.substring(0, 30) + '...' : 'New Conversation',
+          userId: session.user.id
         }
       });
       chatId = newChat.id;
+    }
+
+    // Verify chat belongs to user before adding messages
+    const chat = await prisma.chat.findUnique({ where: { id: chatId } });
+    if (!chat || chat.userId !== session.user.id) {
+       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
     }
 
     // Save the user's message

@@ -1,14 +1,19 @@
-import './globals.css';
+import './globals.css'
+import Providers from './Providers'
 
 export const metadata = {
-  title: 'Nexus AI - Multimodal Assistant',
-  description: 'A premium, fast multimodal AI assistant.',
-};
+  title: 'LEXI AI Assistant',
+  description: 'Multimodal AI Assistant with Native Audio',
+}
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <Providers>
+          {children}
+        </Providers>
+      </body>
     </html>
-  );
+  )
 }

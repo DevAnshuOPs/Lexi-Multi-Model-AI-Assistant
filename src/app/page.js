@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Image as ImageIcon, Mic, Square, X, Volume2, Plus, Activity, FileText, Video, Settings, Sun, Moon, MessageSquare, PlusCircle, Trash2 } from 'lucide-react';
+import { Send, Image as ImageIcon, Mic, Square, X, Volume2, Plus, Activity, FileText, Video, Settings, Sun, Moon, MessageSquare, PlusCircle, Trash2, LogOut } from 'lucide-react';
+import { useSession, signIn, signOut } from 'next-auth/react';
 
 export default function Home() {
   const [messages, setMessages] = useState([]);
@@ -27,6 +28,8 @@ export default function Home() {
   const [selectedVoiceURI, setSelectedVoiceURI] = useState('');
   const [selectedLang, setSelectedLang] = useState('en-US');
 
+  const { data: session, status } = useSession();
+
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -35,7 +38,9 @@ export default function Home() {
 
   // Initialize Data
   useEffect(() => {
-    fetchChats();
+    if (session) {
+      fetchChats();
+    }
 
     const loadVoices = () => {
       const availableVoices = window.speechSynthesis.getVoices();
@@ -345,6 +350,44 @@ export default function Home() {
 
   const availableLangs = [...new Set(voices.map(v => v.lang))].sort();
 
+  if (status === 'loading') {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-color)', color: 'var(--text-primary)' }}>
+        <div className="pulse-anim"><Activity size={48} /></div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-color)' }}>
+        <div className="modal-content" style={{ maxWidth: '400px', width: '90%', textAlign: 'center', padding: '3rem 2rem' }}>
+          <div style={{ width: '64px', height: '64px', background: 'var(--accent-gradient)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '24px', margin: '0 auto 1.5rem' }}>
+            LX
+          </div>
+          <h1 style={{ marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Welcome to LEXI</h1>
+          <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>Log in to access your multimodal assistant.</p>
+          
+          <button 
+            className="action-btn primary" 
+            style={{ width: '100%', padding: '1rem', borderRadius: '0.5rem', marginBottom: '1rem', fontWeight: '600' }}
+            onClick={() => signIn('google')}
+          >
+            Continue with Google
+          </button>
+          
+          <button 
+            className="action-btn primary" 
+            style={{ width: '100%', padding: '1rem', borderRadius: '0.5rem', background: '#24292e', fontWeight: '600' }}
+            onClick={() => signIn('github')}
+          >
+            Continue with GitHub
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="layout-container">
       {/* Sidebar for Chat History */}
@@ -362,6 +405,26 @@ export default function Home() {
               <button className="delete-btn" onClick={(e) => deleteChat(chat.id, e)}><Trash2 size={14}/></button>
             </div>
           ))}
+        </div>
+        <div style={{ padding: '1rem', borderTop: '1px solid var(--panel-border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem' }}>
+            {session.user.image ? (
+              <img src={session.user.image} alt="User" style={{ width: '32px', height: '32px', borderRadius: '50%' }} />
+            ) : (
+              <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'var(--accent-gradient)' }} />
+            )}
+            <div style={{ overflow: 'hidden' }}>
+              <div style={{ fontSize: '0.9rem', fontWeight: '500', color: 'var(--text-primary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{session.user.name}</div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{session.user.email}</div>
+            </div>
+          </div>
+          <button 
+            className="action-btn" 
+            style={{ width: '100%', justifyContent: 'center', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger-color)', borderRadius: '0.5rem', padding: '0.5rem' }}
+            onClick={() => signOut()}
+          >
+            <LogOut size={16} style={{ marginRight: '0.5rem' }} /> Log Out
+          </button>
         </div>
       </aside>
 
