@@ -51,8 +51,6 @@ export default function Home() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [theme, setTheme] = useState('dark');
   const [customInstructions, setCustomInstructions] = useState('');
-  const [voices, setVoices] = useState([]);
-  const [selectedVoiceURI, setSelectedVoiceURI] = useState('');
   const [selectedLang, setSelectedLang] = useState('en-US');
 
   const { data: session, status } = useSession();
@@ -62,30 +60,48 @@ export default function Home() {
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const textareaRef = useRef(null);
+  const audioQueueRef = useRef([]);
+  const currentAudioRef = useRef(null);
 
   // Initialize Data
   useEffect(() => {
     if (session) {
       fetchChats(true);
+      fetchSettings();
     }
-
-    const loadVoices = () => {
-      const availableVoices = window.speechSynthesis.getVoices();
-      setVoices(availableVoices);
-      if (availableVoices.length > 0 && !selectedVoiceURI) {
-        const defaultVoice = availableVoices.find(v => v.lang.startsWith('en')) || availableVoices[0];
-        setSelectedVoiceURI(defaultVoice.voiceURI);
-      }
-    };
-    loadVoices();
-    window.speechSynthesis.onvoiceschanged = loadVoices;
     
     if (theme === 'light') {
       document.documentElement.classList.add('light-mode');
     } else {
       document.documentElement.classList.remove('light-mode');
     }
-  }, [theme]);
+  }, [session, theme]);
+
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch('/api/settings');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.theme) setTheme(data.theme);
+        if (data.language) setSelectedLang(data.language);
+        if (data.instructions) setCustomInstructions(data.instructions);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const saveSettings = async (newSettings) => {
+    try {
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSettings)
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const fetchChats = async (autoLoadLatest = false) => {
     try {
@@ -139,7 +155,16 @@ export default function Home() {
     }
   }, [input]);
 
-  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+  const toggleTheme = () => {
+    const newTheme = theme === 'dark' ? 'light' : 'dark';
+    setTheme(newTheme);
+    saveSettings({ theme: newTheme, language: selectedLang, instructions: customInstructions });
+  };
+
+  const closeSettings = () => {
+    setIsSettingsOpen(false);
+    saveSettings({ theme, language: selectedLang, instructions: customInstructions });
+  };
 
   const startRecording = async (isAutoMode = false) => {
     try {
@@ -223,7 +248,11 @@ export default function Home() {
   const toggleConversationMode = () => {
     if (isConversationMode) {
       if (speakingIndex !== null) {
-        window.speechSynthesis.cancel();
+        if (currentAudioRef.current) {
+          currentAudioRef.current.pause();
+          currentAudioRef.current = null;
+        }
+        audioQueueRef.current = [];
         setSpeakingIndex(null);
       } else {
         setIsConversationMode(false);
@@ -268,44 +297,58 @@ export default function Home() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const speakText = (text, index, onEndCallback) => {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = selectedLang;
-      
-      let voice = null;
-      if (selectedVoiceURI) {
-        voice = voices.find(v => v.voiceURI === selectedVoiceURI);
-      }
-      
-      // If the selected voice doesn't match the selected language, auto-fallback to a native voice
-      if (voice && !voice.lang.startsWith(selectedLang.split('-')[0])) {
-        const matchingVoice = voices.find(v => v.lang.startsWith(selectedLang.split('-')[0]));
-        if (matchingVoice) voice = matchingVoice;
-      }
+  const playNextAudioChunk = (onEndCallback) => {
+    if (audioQueueRef.current.length === 0) {
+      setSpeakingIndex(null);
+      if (onEndCallback) onEndCallback();
+      return;
+    }
+    const base64 = audioQueueRef.current.shift();
+    const audio = new Audio(`data:audio/mp3;base64,${base64}`);
+    currentAudioRef.current = audio;
+    
+    audio.onended = () => playNextAudioChunk(onEndCallback);
+    audio.onerror = () => playNextAudioChunk(onEndCallback);
+    audio.play();
+  };
 
-      if (voice) utterance.voice = voice;
+  const speakText = async (text, index, onEndCallback) => {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
+    audioQueueRef.current = [];
+    setSpeakingIndex(index);
+
+    try {
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, lang: selectedLang })
+      });
       
-      utterance.onstart = () => setSpeakingIndex(index);
-      utterance.onend = () => {
+      const data = await res.json();
+      if (data.audioChunks && data.audioChunks.length > 0) {
+        audioQueueRef.current = data.audioChunks;
+        playNextAudioChunk(onEndCallback);
+      } else {
         setSpeakingIndex(null);
         if (onEndCallback) onEndCallback();
-      };
-      utterance.onerror = () => {
-        setSpeakingIndex(null);
-        if (onEndCallback) onEndCallback();
-      };
-
-      window.speechSynthesis.speak(utterance);
-    } else {
+      }
+    } catch (e) {
+      console.error('TTS Error:', e);
+      setSpeakingIndex(null);
       if (onEndCallback) onEndCallback();
     }
   };
 
   const handleSpeakToggle = (text, index) => {
     if (speakingIndex === index) {
-      window.speechSynthesis.cancel();
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
+      audioQueueRef.current = [];
       setSpeakingIndex(null);
     } else {
       speakText(text, index);
@@ -399,8 +442,6 @@ export default function Home() {
       handleSubmit(e);
     }
   };
-
-  const availableLangs = [...new Set(voices.map(v => v.lang))].sort();
 
   if (status === 'loading') {
     return (
@@ -500,11 +541,11 @@ export default function Home() {
 
         {/* Settings Modal */}
         {isSettingsOpen && (
-          <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
+          <div className="modal-overlay" onClick={closeSettings}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
               <div className="modal-header">
                 <h2>LEXI Preferences</h2>
-                <button className="action-btn" onClick={() => setIsSettingsOpen(false)}><X size={18}/></button>
+                <button className="action-btn" onClick={closeSettings}><X size={18}/></button>
               </div>
               
               <div className="form-group">
@@ -526,18 +567,7 @@ export default function Home() {
                 </select>
               </div>
 
-              <div className="form-group">
-                <label>Voice (Text-to-Speech)</label>
-                <select value={selectedVoiceURI} onChange={e => setSelectedVoiceURI(e.target.value)}>
-                  {voices.filter(v => v.lang.includes(selectedLang.split('-')[0])).map(voice => (
-                    <option key={voice.voiceURI} value={voice.voiceURI}>
-                      {voice.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <button className="modal-close" onClick={() => setIsSettingsOpen(false)}>Save Settings</button>
+              <button className="modal-close" onClick={closeSettings}>Save Settings</button>
             </div>
           </div>
         )}
