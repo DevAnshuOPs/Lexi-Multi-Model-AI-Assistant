@@ -99,6 +99,16 @@ export default function Home() {
     }
   }, [session, theme]);
 
+  // Global mouse tracker for ambient slime glow
+  useEffect(() => {
+    const handleGlobalMouseMove = (e) => {
+      document.body.style.setProperty('--mouse-x', `${e.clientX}px`);
+      document.body.style.setProperty('--mouse-y', `${e.clientY}px`);
+    };
+    window.addEventListener('mousemove', handleGlobalMouseMove);
+    return () => window.removeEventListener('mousemove', handleGlobalMouseMove);
+  }, []);
+
   const fetchSettings = async () => {
     try {
       const res = await fetch('/api/settings');
@@ -540,14 +550,7 @@ export default function Home() {
         </div>
       </aside>
 
-      <main className="app-container" onMouseMove={(e) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        e.currentTarget.style.setProperty('--mouse-x', `${x}px`);
-        e.currentTarget.style.setProperty('--mouse-y', `${y}px`);
-      }}>
-        <div className="glow-overlay"></div>
+      <main className="app-container">
         
         <header className="header" style={{ position: 'relative', zIndex: 2 }}>
           <div className="header-left">
