@@ -160,6 +160,29 @@ body {
   max-width: 1000px;
   margin: 0 auto;
   padding: 1rem 2rem;
+  position: relative;
+}
+
+.glow-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle 600px at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(168, 85, 247, 0.15), transparent 40%);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.app-container:hover .glow-overlay {
+  opacity: 1;
+}
+
+.chat-container, .input-container {
+  position: relative;
+  z-index: 2;
 }
 
 .header {

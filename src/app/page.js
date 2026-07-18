@@ -4,6 +4,28 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Image as ImageIcon, Mic, Square, X, Volume2, Plus, Activity, FileText, Video, Settings, Sun, Moon, MessageSquare, PlusCircle, Trash2, LogOut } from 'lucide-react';
 import { useSession, signIn, signOut } from 'next-auth/react';
 
+const LexiLogo = ({ size = 32 }) => (
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="lexi-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stopColor="#6366f1" />
+        <stop offset="100%" stopColor="#a855f7" />
+      </linearGradient>
+      <filter id="lexi-glow">
+        <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+        <feMerge>
+          <feMergeNode in="coloredBlur"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+    <rect width="100" height="100" rx="24" fill="url(#lexi-grad)" />
+    <path d="M30 50 A 20 20 0 0 1 70 50 A 20 20 0 0 1 30 50" fill="transparent" stroke="white" strokeWidth="6" opacity="0.8" />
+    <circle cx="50" cy="50" r="12" fill="white" filter="url(#lexi-glow)" />
+    <path d="M50 20 L50 30 M50 70 L50 80 M20 50 L30 50 M70 50 L80 50" stroke="white" strokeWidth="4" strokeLinecap="round" opacity="0.6"/>
+  </svg>
+);
+
 const SUPPORTED_LANGUAGES = [
   { code: 'en-US', name: 'English (US)' },
   { code: 'en-GB', name: 'English (UK)' },
@@ -66,7 +88,7 @@ export default function Home() {
   // Initialize Data
   useEffect(() => {
     if (session) {
-      fetchChats(true);
+      fetchChats();
       fetchSettings();
     }
     
@@ -103,14 +125,11 @@ export default function Home() {
     }
   };
 
-  const fetchChats = async (autoLoadLatest = false) => {
+  const fetchChats = async () => {
     try {
       const res = await fetch('/api/chats');
       const data = await res.json();
       setChats(data);
-      if (autoLoadLatest && data.length > 0 && !currentChatId) {
-        loadChat(data[0].id);
-      }
     } catch (e) {
       console.error(e);
     }
@@ -446,7 +465,7 @@ export default function Home() {
   if (status === 'loading') {
     return (
       <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-color)', color: 'var(--text-primary)' }}>
-        <div className="pulse-anim"><Activity size={48} /></div>
+        <div className="pulse-anim"><LexiLogo size={80} /></div>
       </div>
     );
   }
@@ -455,8 +474,8 @@ export default function Home() {
     return (
       <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-color)' }}>
         <div className="modal-content" style={{ maxWidth: '400px', width: '90%', textAlign: 'center', padding: '3rem 2rem' }}>
-          <div style={{ width: '64px', height: '64px', background: 'var(--accent-gradient)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '24px', margin: '0 auto 1.5rem' }}>
-            LX
+          <div style={{ margin: '0 auto 1.5rem', display: 'flex', justifyContent: 'center' }}>
+            <LexiLogo size={64} />
           </div>
           <h1 style={{ marginBottom: '0.5rem', color: 'var(--text-primary)' }}>Welcome to LEXI</h1>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '2rem' }}>Log in to access your multimodal assistant.</p>
@@ -521,12 +540,18 @@ export default function Home() {
         </div>
       </aside>
 
-      <main className="app-container">
-        <header className="header">
+      <main className="app-container" onMouseMove={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        e.currentTarget.style.setProperty('--mouse-x', `${x}px`);
+        e.currentTarget.style.setProperty('--mouse-y', `${y}px`);
+      }}>
+        <div className="glow-overlay"></div>
+        
+        <header className="header" style={{ position: 'relative', zIndex: 2 }}>
           <div className="header-left">
-            <div style={{ width: '32px', height: '32px', background: 'var(--accent-gradient)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>
-              LX
-            </div>
+            <LexiLogo size={32} />
             <h1>LEXI</h1>
           </div>
           <div className="header-right">
