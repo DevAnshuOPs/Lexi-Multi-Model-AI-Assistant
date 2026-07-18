@@ -9,7 +9,7 @@ export async function GET(req, { params }) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
     }
 
-    const { id } = params;
+    const { id } = await params;
     const chat = await prisma.chat.findUnique({
       where: { id },
       include: {
@@ -37,7 +37,7 @@ export async function DELETE(req, { params }) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
     }
 
-    const { id } = params;
+    const { id } = await params;
     
     // Verify ownership
     const chat = await prisma.chat.findUnique({ where: { id }});
