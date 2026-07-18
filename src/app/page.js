@@ -4,6 +4,22 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, Image as ImageIcon, Mic, Square, X, Volume2, Plus, Activity, FileText, Video, Settings, Sun, Moon, MessageSquare, PlusCircle, Trash2, LogOut } from 'lucide-react';
 import { useSession, signIn, signOut } from 'next-auth/react';
 
+const SUPPORTED_LANGUAGES = [
+  { code: 'en-US', name: 'English (US)' },
+  { code: 'en-GB', name: 'English (UK)' },
+  { code: 'es-ES', name: 'Spanish' },
+  { code: 'fr-FR', name: 'French' },
+  { code: 'de-DE', name: 'German' },
+  { code: 'it-IT', name: 'Italian' },
+  { code: 'pt-BR', name: 'Portuguese (Brazil)' },
+  { code: 'hi-IN', name: 'Hindi' },
+  { code: 'zh-CN', name: 'Chinese (Mandarin)' },
+  { code: 'ja-JP', name: 'Japanese' },
+  { code: 'ko-KR', name: 'Korean' },
+  { code: 'ru-RU', name: 'Russian' },
+  { code: 'ar-SA', name: 'Arabic' }
+];
+
 export default function Home() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -14,7 +30,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isConversationMode, setIsConversationMode] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speakingIndex, setSpeakingIndex] = useState(null);
   
   // Database Chat History State
   const [chats, setChats] = useState([]);
@@ -192,8 +208,9 @@ export default function Home() {
 
   const toggleConversationMode = () => {
     if (isConversationMode) {
-      if (isSpeaking) {
+      if (speakingIndex !== null) {
         window.speechSynthesis.cancel();
+        setSpeakingIndex(null);
       } else {
         setIsConversationMode(false);
         if (isRecording) stopRecording();
@@ -237,7 +254,7 @@ export default function Home() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const speakText = (text, onEndCallback) => {
+  const speakText = (text, index, onEndCallback) => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
@@ -247,19 +264,28 @@ export default function Home() {
         if (voice) utterance.voice = voice;
       }
       
-      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onstart = () => setSpeakingIndex(index);
       utterance.onend = () => {
-        setIsSpeaking(false);
+        setSpeakingIndex(null);
         if (onEndCallback) onEndCallback();
       };
       utterance.onerror = () => {
-        setIsSpeaking(false);
+        setSpeakingIndex(null);
         if (onEndCallback) onEndCallback();
       };
 
       window.speechSynthesis.speak(utterance);
     } else {
       if (onEndCallback) onEndCallback();
+    }
+  };
+
+  const handleSpeakToggle = (text, index) => {
+    if (speakingIndex === index) {
+      window.speechSynthesis.cancel();
+      setSpeakingIndex(null);
+    } else {
+      speakText(text, index);
     }
   };
 
@@ -287,7 +313,11 @@ export default function Home() {
     try {
       const formData = new FormData();
       formData.append('messages', JSON.stringify(newMessages));
-      formData.append('systemPrompt', customInstructions);
+      
+      const langName = SUPPORTED_LANGUAGES.find(l => l.code === selectedLang)?.name || 'English';
+      const augmentedPrompt = `${customInstructions}\n\nIMPORTANT: The user wants you to communicate (understand and reply) primarily in this language: ${langName}.`;
+      formData.append('systemPrompt', augmentedPrompt);
+      
       if (currentChatId) formData.append('chatId', currentChatId);
       
       if (attachment && (attachment.type === 'video' || attachment.type === 'file')) {
@@ -319,7 +349,7 @@ export default function Home() {
       }]);
 
       if (isConversationMode || textOverride !== null) {
-        speakText(data.reply, () => {
+        speakText(data.reply, messages.length + 1, () => {
           if (isConversationMode) startRecording(true);
         });
       }
@@ -467,9 +497,8 @@ export default function Home() {
               <div className="form-group">
                 <label>Language</label>
                 <select value={selectedLang} onChange={e => setSelectedLang(e.target.value)}>
-                  <option value="en-US">English (US)</option>
-                  {availableLangs.map(lang => (
-                    <option key={lang} value={lang}>{lang}</option>
+                  {SUPPORTED_LANGUAGES.map(lang => (
+                    <option key={lang.code} value={lang.code}>{lang.name}</option>
                   ))}
                 </select>
               </div>
@@ -503,11 +532,11 @@ export default function Home() {
               <div className="message-bubble">
                 {msg.role === 'assistant' && (
                   <button 
-                    onClick={() => speakText(msg.content)} 
-                    style={{ position: 'absolute', top: '-10px', right: '-10px', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '50%', padding: '4px', cursor: 'pointer', color: 'var(--text-secondary)' }}
-                    title="Listen"
+                    onClick={() => handleSpeakToggle(msg.content, index)} 
+                    style={{ position: 'absolute', top: '-10px', right: '-10px', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '50%', padding: '4px', cursor: 'pointer', color: speakingIndex === index ? 'var(--accent-color)' : 'var(--text-secondary)' }}
+                    title={speakingIndex === index ? "Stop Speaking" : "Listen"}
                   >
-                    <Volume2 size={14} />
+                    {speakingIndex === index ? <Square size={14} fill="currentColor" /> : <Volume2 size={14} />}
                   </button>
                 )}
                 {msg.content && <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>}
@@ -572,7 +601,7 @@ export default function Home() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={isConversationMode ? (isRecording ? "Listening... (Click Sound Wave to stop)" : (isSpeaking ? "LEXI is speaking... (Click Sound Wave to interrupt)" : "Waiting...")) : "Type a message..."}
+              placeholder={isConversationMode ? (isRecording ? "Listening... (Click Sound Wave to stop)" : (speakingIndex !== null ? "LEXI is speaking... (Click Sound Wave to interrupt)" : "Waiting...")) : "Type a message..."}
               rows={1}
               disabled={isConversationMode}
             />
