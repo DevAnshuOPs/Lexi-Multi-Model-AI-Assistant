@@ -12,12 +12,23 @@ const SUPPORTED_LANGUAGES = [
   { code: 'de-DE', name: 'German' },
   { code: 'it-IT', name: 'Italian' },
   { code: 'pt-BR', name: 'Portuguese (Brazil)' },
-  { code: 'hi-IN', name: 'Hindi' },
   { code: 'zh-CN', name: 'Chinese (Mandarin)' },
   { code: 'ja-JP', name: 'Japanese' },
   { code: 'ko-KR', name: 'Korean' },
   { code: 'ru-RU', name: 'Russian' },
-  { code: 'ar-SA', name: 'Arabic' }
+  { code: 'ar-SA', name: 'Arabic' },
+  // Indian Languages
+  { code: 'hi-IN', name: 'Hindi' },
+  { code: 'bn-IN', name: 'Bengali' },
+  { code: 'mr-IN', name: 'Marathi' },
+  { code: 'gu-IN', name: 'Gujarati' },
+  { code: 'pa-IN', name: 'Punjabi' },
+  { code: 'ta-IN', name: 'Tamil' },
+  { code: 'te-IN', name: 'Telugu' },
+  { code: 'kn-IN', name: 'Kannada' },
+  { code: 'ml-IN', name: 'Malayalam' },
+  { code: 'or-IN', name: 'Odia' },
+  { code: 'ur-IN', name: 'Urdu' }
 ];
 
 export default function Home() {
