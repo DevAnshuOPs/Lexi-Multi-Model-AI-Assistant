@@ -144,14 +144,13 @@ export default function Home() {
                  await handleSendMessage(data.text, audioBlob);
                } else {
                  setInput((prev) => prev ? prev + ' ' + data.text : data.text);
-                 setAttachment({ file: audioBlob, preview: null, type: 'audio' });
+                 // NO audio blob attachment for manual mic - just voice to text!
                }
              } else {
                if (isAutoMode) {
                  await handleSendMessage("Listen to this audio.", audioBlob);
                } else {
-                 setAttachment({ file: audioBlob, preview: null, type: 'audio' });
-                 setInput("Listen to this audio.");
+                 alert("Could not detect any speech.");
                }
              }
           } catch(err) {
