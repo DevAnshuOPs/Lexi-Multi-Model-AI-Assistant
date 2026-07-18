@@ -10,19 +10,22 @@ export const authOptions = {
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || "pending_google_id",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || "pending_google_secret",
+      allowDangerousEmailAccountLinking: true,
     }),
     GitHubProvider({
       clientId: process.env.GITHUB_CLIENT_ID || "pending_github_id",
       clientSecret: process.env.GITHUB_CLIENT_SECRET || "pending_github_secret",
+      allowDangerousEmailAccountLinking: true,
     })
   ],
   session: {
     strategy: "jwt",
   },
   callbacks: {
-    async session({ session, token }) {
-      if (session.user) {
-        session.user.id = token.sub;
+    async session({ session, token, user }) {
+      if (session?.user) {
+        // Handle both JWT strategy (token) and Database strategy (user)
+        session.user.id = token?.sub || user?.id;
       }
       return session;
     }
