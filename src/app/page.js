@@ -1,19 +1,23 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Image as ImageIcon, Mic, Square, X, Volume2, Plus, Activity, FileText, Video, Settings, Sun, Moon } from 'lucide-react';
+import { Send, Image as ImageIcon, Mic, Square, X, Volume2, Plus, Activity, FileText, Video, Settings, Sun, Moon, MessageSquare, PlusCircle, Trash2 } from 'lucide-react';
 
 export default function Home() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   
-  const [attachment, setAttachment] = useState(null); // { file, preview, type }
+  const [attachment, setAttachment] = useState(null); 
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
   
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isConversationMode, setIsConversationMode] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  
+  // Database Chat History State
+  const [chats, setChats] = useState([]);
+  const [currentChatId, setCurrentChatId] = useState(null);
   
   // Settings & Personalization State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -29,13 +33,14 @@ export default function Home() {
   const audioChunksRef = useRef([]);
   const textareaRef = useRef(null);
 
-  // Initialize Voices & Theme
+  // Initialize Data
   useEffect(() => {
+    fetchChats();
+
     const loadVoices = () => {
       const availableVoices = window.speechSynthesis.getVoices();
       setVoices(availableVoices);
       if (availableVoices.length > 0 && !selectedVoiceURI) {
-        // Find default or first english voice
         const defaultVoice = availableVoices.find(v => v.lang.startsWith('en')) || availableVoices[0];
         setSelectedVoiceURI(defaultVoice.voiceURI);
       }
@@ -43,13 +48,52 @@ export default function Home() {
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
     
-    // Apply theme
     if (theme === 'light') {
       document.documentElement.classList.add('light-mode');
     } else {
       document.documentElement.classList.remove('light-mode');
     }
   }, [theme]);
+
+  const fetchChats = async () => {
+    try {
+      const res = await fetch('/api/chats');
+      const data = await res.json();
+      setChats(data);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const loadChat = async (id) => {
+    setIsLoading(true);
+    try {
+      const res = await fetch(`/api/chats/${id}`);
+      const data = await res.json();
+      setCurrentChatId(data.id);
+      setMessages(data.messages || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startNewChat = () => {
+    setCurrentChatId(null);
+    setMessages([]);
+  };
+
+  const deleteChat = async (id, e) => {
+    e.stopPropagation();
+    try {
+      await fetch(`/api/chats/${id}`, { method: 'DELETE' });
+      if (currentChatId === id) startNewChat();
+      fetchChats();
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   // Auto-resize textarea
   useEffect(() => {
@@ -90,19 +134,14 @@ export default function Home() {
              });
              const data = await response.json();
              
-             // Send both text and raw audio to the backend!
              if (data.text) {
                if (isAutoMode) {
                  await handleSendMessage(data.text, audioBlob);
                } else {
                  setInput((prev) => prev ? prev + ' ' + data.text : data.text);
-                 // Store audioBlob in state if we want manual submit to include it, 
-                 // but for now, auto-submit in conversation mode is primary use-case.
-                 // We'll attach it directly.
                  setAttachment({ file: audioBlob, preview: null, type: 'audio' });
                }
              } else {
-               // If Whisper fails to hear speech, we still send the audio to Gemini!
                if (isAutoMode) {
                  await handleSendMessage("Listen to this audio.", audioBlob);
                } else {
@@ -245,6 +284,7 @@ export default function Home() {
       const formData = new FormData();
       formData.append('messages', JSON.stringify(newMessages));
       formData.append('systemPrompt', customInstructions);
+      if (currentChatId) formData.append('chatId', currentChatId);
       
       if (attachment && (attachment.type === 'video' || attachment.type === 'file')) {
         formData.append('media', attachment.file);
@@ -263,6 +303,12 @@ export default function Home() {
       
       const data = await response.json();
       
+      // Update Chat ID if this is a new chat
+      if (!currentChatId && data.chatId) {
+        setCurrentChatId(data.chatId);
+        fetchChats(); // Refresh sidebar
+      }
+
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: data.reply
@@ -297,165 +343,184 @@ export default function Home() {
     }
   };
 
-  // Extract unique languages from available voices
   const availableLangs = [...new Set(voices.map(v => v.lang))].sort();
 
   return (
-    <main className="app-container">
-      <header className="header">
-        <div className="header-left">
-          <div style={{ width: '32px', height: '32px', background: 'var(--accent-gradient)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>
-            LX
-          </div>
-          <h1>LEXI</h1>
-        </div>
-        <div className="header-right">
-          <button className="action-btn" onClick={toggleTheme} title="Toggle Theme">
-            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
-          <button className="action-btn" onClick={() => setIsSettingsOpen(true)} title="Settings">
-            <Settings size={18} />
+    <div className="layout-container">
+      {/* Sidebar for Chat History */}
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <button className="new-chat-btn" onClick={startNewChat}>
+            <PlusCircle size={18} /> New Chat
           </button>
         </div>
-      </header>
+        <div className="chat-list">
+          {chats.map(chat => (
+            <div key={chat.id} className={`chat-item ${currentChatId === chat.id ? 'active' : ''}`} onClick={() => loadChat(chat.id)}>
+              <MessageSquare size={16} className="chat-icon" />
+              <span className="chat-title">{chat.title}</span>
+              <button className="delete-btn" onClick={(e) => deleteChat(chat.id, e)}><Trash2 size={14}/></button>
+            </div>
+          ))}
+        </div>
+      </aside>
 
-      {/* Settings Modal */}
-      {isSettingsOpen && (
-        <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>LEXI Preferences</h2>
-              <button className="action-btn" onClick={() => setIsSettingsOpen(false)}><X size={18}/></button>
+      <main className="app-container">
+        <header className="header">
+          <div className="header-left">
+            <div style={{ width: '32px', height: '32px', background: 'var(--accent-gradient)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>
+              LX
+            </div>
+            <h1>LEXI</h1>
+          </div>
+          <div className="header-right">
+            <button className="action-btn" onClick={toggleTheme} title="Toggle Theme">
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button className="action-btn" onClick={() => setIsSettingsOpen(true)} title="Settings">
+              <Settings size={18} />
+            </button>
+          </div>
+        </header>
+
+        {/* Settings Modal */}
+        {isSettingsOpen && (
+          <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
+            <div className="modal-content" onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2>LEXI Preferences</h2>
+                <button className="action-btn" onClick={() => setIsSettingsOpen(false)}><X size={18}/></button>
+              </div>
+              
+              <div className="form-group">
+                <label>Personalization Instructions</label>
+                <textarea 
+                  rows={3} 
+                  placeholder="e.g. Talk like a pirate, or keep responses under 2 sentences..."
+                  value={customInstructions}
+                  onChange={e => setCustomInstructions(e.target.value)}
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Language</label>
+                <select value={selectedLang} onChange={e => setSelectedLang(e.target.value)}>
+                  <option value="en-US">English (US)</option>
+                  {availableLangs.map(lang => (
+                    <option key={lang} value={lang}>{lang}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Voice (Text-to-Speech)</label>
+                <select value={selectedVoiceURI} onChange={e => setSelectedVoiceURI(e.target.value)}>
+                  {voices.filter(v => v.lang.includes(selectedLang.split('-')[0])).map(voice => (
+                    <option key={voice.voiceURI} value={voice.voiceURI}>
+                      {voice.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button className="modal-close" onClick={() => setIsSettingsOpen(false)}>Save Settings</button>
+            </div>
+          </div>
+        )}
+
+        <div className="chat-container">
+          {messages.length === 0 && (
+            <div style={{ textAlign: 'center', margin: 'auto', color: 'var(--text-secondary)' }}>
+              <h2 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>I am LEXI. How can I help you?</h2>
+              <p>Upload an image/file, speak, or type a message to start.</p>
+            </div>
+          )}
+
+          {messages.map((msg, index) => (
+            <div key={index} className={`message-wrapper ${msg.role}`}>
+              <div className="message-bubble">
+                {msg.role === 'assistant' && (
+                  <button 
+                    onClick={() => speakText(msg.content)} 
+                    style={{ position: 'absolute', top: '-10px', right: '-10px', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '50%', padding: '4px', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                    title="Listen"
+                  >
+                    <Volume2 size={14} />
+                  </button>
+                )}
+                {msg.content && <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>}
+                {msg.image && <img src={msg.image} alt="User upload" className="message-media" />}
+                {msg.video && <div className="message-media file-attachment">🎥 Video: {msg.video}</div>}
+                {msg.file && <div className="message-media file-attachment">📄 Document: {msg.file}</div>}
+                {msg.audio && <div className="message-media file-attachment">🎙️ Audio Recording</div>}
+              </div>
+            </div>
+          ))}
+          
+          {isLoading && (
+            <div className="message-wrapper ai">
+              <div className="message-bubble typing-indicator">
+                <div className="dot"></div><div className="dot"></div><div className="dot"></div>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        <form className="input-container" onSubmit={handleSubmit}>
+          {attachment && (
+            <div className="preview-area">
+              <div className="attachment-preview">
+                {attachment.type === 'image' && <img src={attachment.preview} alt="Preview" />}
+                {attachment.type === 'video' && <div className="file-preview"><Video size={24}/> <span>{attachment.file.name}</span></div>}
+                {attachment.type === 'file' && <div className="file-preview"><FileText size={24}/> <span>{attachment.file.name}</span></div>}
+                {attachment.type === 'audio' && <div className="file-preview"><Mic size={24}/> <span>Audio</span></div>}
+                <button type="button" className="remove-btn" onClick={removeAttachment}><X size={12} /></button>
+              </div>
+            </div>
+          )}
+          
+          <div className="input-row">
+            <input type="file" style={{ display: 'none' }} ref={fileInputRef} onChange={handleFileUpload} />
+            
+            <div style={{ position: 'relative' }}>
+              <button type="button" className="action-btn" onClick={() => setIsAttachmentMenuOpen(!isAttachmentMenuOpen)} title="Add Attachment">
+                <Plus size={20} />
+              </button>
+              {isAttachmentMenuOpen && (
+                <div className="attachment-menu">
+                  <button type="button" onClick={() => triggerFileInput('image/*')}><ImageIcon size={16}/> Image</button>
+                  <button type="button" onClick={() => triggerFileInput('video/*')}><Video size={16}/> Video</button>
+                  <button type="button" onClick={() => triggerFileInput('.pdf,.txt,.doc,.docx')}><FileText size={16}/> Document</button>
+                </div>
+              )}
             </div>
             
-            <div className="form-group">
-              <label>Personalization Instructions (System Prompt)</label>
-              <textarea 
-                rows={3} 
-                placeholder="e.g. Talk like a pirate, or keep responses under 2 sentences..."
-                value={customInstructions}
-                onChange={e => setCustomInstructions(e.target.value)}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Language</label>
-              <select value={selectedLang} onChange={e => setSelectedLang(e.target.value)}>
-                <option value="en-US">English (US)</option>
-                {availableLangs.map(lang => (
-                  <option key={lang} value={lang}>{lang}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>Voice (Text-to-Speech)</label>
-              <select value={selectedVoiceURI} onChange={e => setSelectedVoiceURI(e.target.value)}>
-                {voices.filter(v => v.lang.includes(selectedLang.split('-')[0])).map(voice => (
-                  <option key={voice.voiceURI} value={voice.voiceURI}>
-                    {voice.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <button className="modal-close" onClick={() => setIsSettingsOpen(false)}>Save Settings</button>
-          </div>
-        </div>
-      )}
-
-      <div className="chat-container">
-        {messages.length === 0 && (
-          <div style={{ textAlign: 'center', margin: 'auto', color: 'var(--text-secondary)' }}>
-            <h2 style={{ color: 'var(--text-primary)', marginBottom: '0.5rem' }}>I am LEXI. How can I help you?</h2>
-            <p>Upload an image/file, speak, or type a message to start.</p>
-          </div>
-        )}
-
-        {messages.map((msg, index) => (
-          <div key={index} className={`message-wrapper ${msg.role}`}>
-            <div className="message-bubble">
-              {msg.role === 'assistant' && (
-                <button 
-                  onClick={() => speakText(msg.content)} 
-                  style={{ position: 'absolute', top: '-10px', right: '-10px', background: 'var(--panel-bg)', border: '1px solid var(--panel-border)', borderRadius: '50%', padding: '4px', cursor: 'pointer', color: 'var(--text-secondary)' }}
-                  title="Listen"
-                >
-                  <Volume2 size={14} />
-                </button>
-              )}
-              {msg.content && <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>}
-              {msg.image && <img src={msg.image} alt="User upload" className="message-media" />}
-              {msg.video && <div className="message-media file-attachment">🎥 Video: {msg.video}</div>}
-              {msg.file && <div className="message-media file-attachment">📄 Document: {msg.file}</div>}
-              {msg.audio && <div className="message-media file-attachment">🎙️ Audio Recording</div>}
-            </div>
-          </div>
-        ))}
-        
-        {isLoading && (
-          <div className="message-wrapper ai">
-            <div className="message-bubble typing-indicator">
-              <div className="dot"></div><div className="dot"></div><div className="dot"></div>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      <form className="input-container" onSubmit={handleSubmit}>
-        {attachment && (
-          <div className="preview-area">
-            <div className="attachment-preview">
-              {attachment.type === 'image' && <img src={attachment.preview} alt="Preview" />}
-              {attachment.type === 'video' && <div className="file-preview"><Video size={24}/> <span>{attachment.file.name}</span></div>}
-              {attachment.type === 'file' && <div className="file-preview"><FileText size={24}/> <span>{attachment.file.name}</span></div>}
-              {attachment.type === 'audio' && <div className="file-preview"><Mic size={24}/> <span>Audio</span></div>}
-              <button type="button" className="remove-btn" onClick={removeAttachment}><X size={12} /></button>
-            </div>
-          </div>
-        )}
-        
-        <div className="input-row">
-          <input type="file" style={{ display: 'none' }} ref={fileInputRef} onChange={handleFileUpload} />
-          
-          <div style={{ position: 'relative' }}>
-            <button type="button" className="action-btn" onClick={() => setIsAttachmentMenuOpen(!isAttachmentMenuOpen)} title="Add Attachment">
-              <Plus size={20} />
+            <button type="button" className={`action-btn ${isConversationMode ? 'recording' : ''}`} onClick={toggleConversationMode} title="Conversation Mode (Sound Wave)">
+               <Activity size={20} className={isConversationMode ? 'pulse-anim' : ''} />
             </button>
-            {isAttachmentMenuOpen && (
-              <div className="attachment-menu">
-                <button type="button" onClick={() => triggerFileInput('image/*')}><ImageIcon size={16}/> Image</button>
-                <button type="button" onClick={() => triggerFileInput('video/*')}><Video size={16}/> Video</button>
-                <button type="button" onClick={() => triggerFileInput('.pdf,.txt,.doc,.docx')}><FileText size={16}/> Document</button>
-              </div>
-            )}
+
+            <button type="button" className={`action-btn ${isRecording && !isConversationMode ? 'recording' : ''}`} onClick={toggleRecording} title="Manual Voice Input">
+              {isRecording && !isConversationMode ? <Square size={16} fill="currentColor" /> : <Mic size={20} />}
+            </button>
+
+            <textarea
+              ref={textareaRef}
+              className="text-input"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={isConversationMode ? (isRecording ? "Listening... (Click Sound Wave to stop)" : (isSpeaking ? "LEXI is speaking... (Click Sound Wave to interrupt)" : "Waiting...")) : "Type a message..."}
+              rows={1}
+              disabled={isConversationMode}
+            />
+
+            <button type="submit" className="action-btn primary" disabled={(!input.trim() && !attachment) || isLoading || isConversationMode}>
+              <Send size={18} />
+            </button>
           </div>
-          
-          <button type="button" className={`action-btn ${isConversationMode ? 'recording' : ''}`} onClick={toggleConversationMode} title="Conversation Mode (Sound Wave)">
-             <Activity size={20} className={isConversationMode ? 'pulse-anim' : ''} />
-          </button>
-
-          <button type="button" className={`action-btn ${isRecording && !isConversationMode ? 'recording' : ''}`} onClick={toggleRecording} title="Manual Voice Input">
-            {isRecording && !isConversationMode ? <Square size={16} fill="currentColor" /> : <Mic size={20} />}
-          </button>
-
-          <textarea
-            ref={textareaRef}
-            className="text-input"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={isConversationMode ? (isRecording ? "Listening... (Click Sound Wave to stop)" : (isSpeaking ? "LEXI is speaking... (Click Sound Wave to interrupt)" : "Waiting...")) : "Type a message..."}
-            rows={1}
-            disabled={isConversationMode}
-          />
-
-          <button type="submit" className="action-btn primary" disabled={(!input.trim() && !attachment) || isLoading || isConversationMode}>
-            <Send size={18} />
-          </button>
-        </div>
-      </form>
-    </main>
+        </form>
+      </main>
+    </div>
   );
 }

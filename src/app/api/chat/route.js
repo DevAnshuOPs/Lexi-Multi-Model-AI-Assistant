@@ -4,6 +4,7 @@ import { GoogleAIFileManager } from '@google/generative-ai/server';
 import { writeFile, unlink } from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import prisma from '@/lib/prisma';
 
 // Initialize Hugging Face Inference client
 const hf = new HfInference(process.env.HF_TOKEN);
@@ -15,6 +16,7 @@ export async function POST(req) {
     const formData = await req.formData();
     const messagesStr = formData.get('messages');
     const customSystemPrompt = formData.get('systemPrompt');
+    let chatId = formData.get('chatId'); // Can be null if new chat
     
     if (!messagesStr) {
       return new Response(JSON.stringify({ error: 'Messages are required' }), { status: 400 });
@@ -26,6 +28,7 @@ export async function POST(req) {
     const latestMessage = messages[messages.length - 1];
 
     let caption = null;
+    let finalReply = null;
 
     // Handle large files (Videos / Docs)
     if (mediaFile && (latestMessage.video || latestMessage.file)) {
@@ -99,8 +102,7 @@ export async function POST(req) {
     const systemMessage = { role: 'system', content: finalSystemPrompt };
     
     if (caption) {
-      let finalReply = caption;
-      // We pass the caption/audio-analysis as context to the LLM if they asked a specific text question too
+      finalReply = caption;
       if (latestMessage.content && latestMessage.content.trim() && latestMessage.content !== "Listen to this audio.") {
         const textPrompt = `The user uploaded an attachment or audio. The multimodal analysis is: "${caption}".\n\nThe user also asked: "${latestMessage.content}"\n\nPlease answer the user's question based on the analysis.`;
         
@@ -112,9 +114,7 @@ export async function POST(req) {
         });
         finalReply = textResponse.choices[0].message.content.trim();
       }
-      return new Response(JSON.stringify({ reply: finalReply }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     } else {
-      // Text-only request
       const formattedMessages = messages.map(msg => ({
         role: msg.role === 'assistant' ? 'assistant' : 'user',
         content: msg.content
@@ -127,9 +127,43 @@ export async function POST(req) {
         max_tokens: 500,
         temperature: 0.7
       });
-      let reply = textResponse.choices[0].message.content.trim();
-      return new Response(JSON.stringify({ reply }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      finalReply = textResponse.choices[0].message.content.trim();
     }
+
+    // DATABASE SAVING LOGIC
+    // If no chatId, create a new chat!
+    if (!chatId || chatId === 'null') {
+      const newChat = await prisma.chat.create({
+        data: {
+          title: latestMessage.content ? latestMessage.content.substring(0, 30) + '...' : 'New Conversation'
+        }
+      });
+      chatId = newChat.id;
+    }
+
+    // Save the user's message
+    await prisma.message.create({
+      data: {
+        role: 'user',
+        content: latestMessage.content || '',
+        image: latestMessage.image || null,
+        video: latestMessage.video || null,
+        file: latestMessage.file || null,
+        audio: latestMessage.audio || null,
+        chatId: chatId,
+      }
+    });
+
+    // Save LEXI's response
+    await prisma.message.create({
+      data: {
+        role: 'assistant',
+        content: finalReply,
+        chatId: chatId,
+      }
+    });
+
+    return new Response(JSON.stringify({ reply: finalReply, chatId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 
   } catch (error) {
     console.error('Error in chat API:', error);
