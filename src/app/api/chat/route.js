@@ -1,0 +1,123 @@
+import { HfInference } from '@huggingface/inference';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleAIFileManager } from '@google/generative-ai/server';
+import { writeFile, unlink } from 'fs/promises';
+import path from 'path';
+import os from 'os';
+
+// Initialize Hugging Face Inference client
+// Ensure you have HF_TOKEN in your .env.local file
+const hf = new HfInference(process.env.HF_TOKEN);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
+
+export async function POST(req) {
+  try {
+    const formData = await req.formData();
+    const messagesStr = formData.get('messages');
+    
+    if (!messagesStr) {
+      return new Response(JSON.stringify({ error: 'Messages are required' }), { status: 400 });
+    }
+
+    const messages = JSON.parse(messagesStr);
+    const mediaFile = formData.get('media'); // File object
+    const latestMessage = messages[messages.length - 1];
+
+    let caption = null;
+
+    // Handle large files (Videos / Docs)
+    if (mediaFile && (latestMessage.video || latestMessage.file)) {
+      const bytes = await mediaFile.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      // sanitize filename
+      const safeName = mediaFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const tempFilePath = path.join(os.tmpdir(), `${Date.now()}_${safeName}`);
+      
+      await writeFile(tempFilePath, buffer);
+      
+      // Upload to Gemini
+      const uploadResponse = await fileManager.uploadFile(tempFilePath, {
+        mimeType: mediaFile.type,
+        displayName: mediaFile.name,
+      });
+
+      // Poll until processed if it's a video
+      let file = await fileManager.getFile(uploadResponse.file.name);
+      while (file.state === "PROCESSING") {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        file = await fileManager.getFile(uploadResponse.file.name);
+      }
+
+      if (file.state === "FAILED") {
+        await unlink(tempFilePath).catch(console.error);
+        return new Response(JSON.stringify({ error: 'Video processing failed in Gemini' }), { status: 500 });
+      }
+
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      const prompt = `Please analyze this attached file in detail. User asked: "${latestMessage.content}"`;
+      
+      const result = await model.generateContent([
+        { fileData: { mimeType: uploadResponse.file.mimeType, fileUri: uploadResponse.file.uri } },
+        { text: prompt },
+      ]);
+      
+      caption = result.response.text();
+      
+      // Cleanup temp file
+      await unlink(tempFilePath).catch(console.error);
+    } 
+    // Handle inline base64 images
+    else if (latestMessage.image) {
+      const base64Data = latestMessage.image.split(',')[1];
+      const mimeType = latestMessage.image.match(/data:(.*?);/)[1] || 'image/jpeg';
+      
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      const prompt = "Please describe exactly what you see in this image in high detail.";
+      const imageParts = [{ inlineData: { data: base64Data, mimeType } }];
+
+      const result = await model.generateContent([prompt, ...imageParts]);
+      caption = result.response.text();
+    }
+
+    // Now send to Qwen if necessary (for text context)
+    const systemMessage = { role: 'system', content: 'You are LEXI, a multimodal AI assistant. You are here to help the user in any kind of task that is required. Always identify yourself as LEXI if asked.' };
+    
+    if (caption) {
+      let finalReply = caption;
+      // We pass the caption as context to the LLM
+      if (latestMessage.content.trim()) {
+        const textPrompt = `The user uploaded an attachment. The attachment analysis: "${caption}".\n\nThe user asked: "${latestMessage.content}"\n\nPlease answer the user's question based on the analysis.`;
+        
+        const textResponse = await hf.chatCompletion({
+          model: 'Qwen/Qwen2.5-72B-Instruct',
+          messages: [systemMessage, { role: 'user', content: textPrompt }],
+          max_tokens: 500,
+          temperature: 0.7
+        });
+        finalReply = textResponse.choices[0].message.content.trim();
+      }
+      return new Response(JSON.stringify({ reply: finalReply }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } else {
+      // Text-only request (with memory)
+      const formattedMessages = messages.map(msg => ({
+        role: msg.role === 'assistant' ? 'assistant' : 'user',
+        content: msg.content
+      }));
+      formattedMessages.unshift(systemMessage);
+
+      const textResponse = await hf.chatCompletion({
+        model: 'Qwen/Qwen2.5-72B-Instruct',
+        messages: formattedMessages,
+        max_tokens: 500,
+        temperature: 0.7
+      });
+      let reply = textResponse.choices[0].message.content.trim();
+      return new Response(JSON.stringify({ reply }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+
+  } catch (error) {
+    console.error('Error in chat API:', error);
+    return new Response(JSON.stringify({ error: 'Internal Server Error', details: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
