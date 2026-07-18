@@ -20,6 +20,20 @@
   --success-color: #10b981;
 }
 
+:root.light-mode {
+  --bg-color: #f8fafc;
+  --panel-bg: rgba(255, 255, 255, 0.85);
+  --panel-border: rgba(0, 0, 0, 0.1);
+  --text-primary: #1e293b;
+  --text-secondary: #64748b;
+  
+  --user-msg-bg: rgba(99, 102, 241, 0.1);
+  --user-msg-border: rgba(99, 102, 241, 0.2);
+  
+  --ai-msg-bg: #ffffff;
+  --ai-msg-border: rgba(0, 0, 0, 0.1);
+}
+
 * {
   box-sizing: border-box;
   padding: 0;
@@ -36,6 +50,7 @@ body {
   line-height: 1.5;
   min-height: 100vh;
   overflow: hidden; /* App is full screen */
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 /* Base Layout */
@@ -52,9 +67,21 @@ body {
   padding: 1rem 0;
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  justify-content: space-between;
   border-bottom: 1px solid var(--panel-border);
   margin-bottom: 1rem;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .header h1 {
@@ -108,14 +135,14 @@ body {
   -webkit-backdrop-filter: blur(12px);
   font-size: 0.95rem;
   position: relative;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
 .message-wrapper.user .message-bubble {
   background: var(--user-msg-bg);
   border: 1px solid var(--user-msg-border);
   border-bottom-right-radius: 0.25rem;
-  color: #fff;
+  color: var(--text-primary);
 }
 
 .message-wrapper.ai .message-bubble {
@@ -132,6 +159,77 @@ body {
   border: 1px solid rgba(255,255,255,0.1);
 }
 
+/* Settings Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  width: 90%;
+  max-width: 400px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.modal-header h2 {
+  font-size: 1.2rem;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-group label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.form-group select, .form-group textarea {
+  background: rgba(0,0,0,0.1);
+  border: 1px solid var(--panel-border);
+  color: var(--text-primary);
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  outline: none;
+  font-family: inherit;
+}
+
+.form-group select:focus, .form-group textarea:focus {
+  border-color: var(--accent-color);
+}
+
+.modal-close {
+  background: var(--accent-gradient);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  width: 100%;
+  margin-top: 1rem;
+  font-weight: 600;
+}
+
 /* Input Area */
 .input-container {
   display: flex;
@@ -142,13 +240,13 @@ body {
   padding: 0.5rem;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   transition: all 0.3s ease;
 }
 
 .input-container:focus-within {
   border-color: rgba(99, 102, 241, 0.5);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 15px var(--accent-glow);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), 0 0 15px var(--accent-glow);
 }
 
 .input-row {
@@ -191,7 +289,7 @@ body {
 
 .action-btn:hover:not(:disabled) {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(128, 128, 128, 0.1);
 }
 
 .action-btn.primary {
@@ -229,7 +327,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0,0,0,0.2);
+  background: rgba(0,0,0,0.1);
   padding: 0.25rem;
 }
 
@@ -293,7 +391,7 @@ body {
 }
 
 .attachment-menu button:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(128, 128, 128, 0.2);
 }
 
 .pulse-anim {
@@ -320,7 +418,7 @@ body {
   display: inline-flex;
   align-items: center;
   padding: 0.5rem 1rem;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(128, 128, 128, 0.1);
   border-radius: 0.5rem;
   font-size: 0.9rem;
 }

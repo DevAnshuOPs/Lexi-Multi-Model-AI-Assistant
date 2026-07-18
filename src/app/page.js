@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Image as ImageIcon, Mic, Square, X, Volume2, Plus, Activity, FileText, Video } from 'lucide-react';
+import { Send, Image as ImageIcon, Mic, Square, X, Volume2, Plus, Activity, FileText, Video, Settings, Sun, Moon } from 'lucide-react';
 
 export default function Home() {
   const [messages, setMessages] = useState([]);
@@ -15,11 +15,41 @@ export default function Home() {
   const [isConversationMode, setIsConversationMode] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   
+  // Settings & Personalization State
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [theme, setTheme] = useState('dark');
+  const [customInstructions, setCustomInstructions] = useState('');
+  const [voices, setVoices] = useState([]);
+  const [selectedVoiceURI, setSelectedVoiceURI] = useState('');
+  const [selectedLang, setSelectedLang] = useState('en-US');
+
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const textareaRef = useRef(null);
+
+  // Initialize Voices & Theme
+  useEffect(() => {
+    const loadVoices = () => {
+      const availableVoices = window.speechSynthesis.getVoices();
+      setVoices(availableVoices);
+      if (availableVoices.length > 0 && !selectedVoiceURI) {
+        // Find default or first english voice
+        const defaultVoice = availableVoices.find(v => v.lang.startsWith('en')) || availableVoices[0];
+        setSelectedVoiceURI(defaultVoice.voiceURI);
+      }
+    };
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+    
+    // Apply theme
+    if (theme === 'light') {
+      document.documentElement.classList.add('light-mode');
+    } else {
+      document.documentElement.classList.remove('light-mode');
+    }
+  }, [theme]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -30,9 +60,10 @@ export default function Home() {
     }
   }, [input]);
 
+  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark');
+
   const startRecording = async (isAutoMode = false) => {
     try {
-      // Disable audio processing so it can hear music/raw audio clearly
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
       });
@@ -55,23 +86,33 @@ export default function Home() {
              const response = await fetch('/api/transcribe', {
                method: 'POST',
                headers: { 'Content-Type': 'application/json' },
-               body: JSON.stringify({ audio: base64Audio })
+               body: JSON.stringify({ audio: base64Audio, language: selectedLang })
              });
              const data = await response.json();
+             
+             // Send both text and raw audio to the backend!
              if (data.text) {
                if (isAutoMode) {
-                 // In conversation mode, immediately send the text
-                 await handleSendMessage(data.text);
+                 await handleSendMessage(data.text, audioBlob);
                } else {
                  setInput((prev) => prev ? prev + ' ' + data.text : data.text);
+                 // Store audioBlob in state if we want manual submit to include it, 
+                 // but for now, auto-submit in conversation mode is primary use-case.
+                 // We'll attach it directly.
+                 setAttachment({ file: audioBlob, preview: null, type: 'audio' });
                }
              } else {
-               alert("Speech recognition failed: " + (data.error || "Unknown error"));
-               if (isAutoMode) setIsConversationMode(false); // abort loop on error
+               // If Whisper fails to hear speech, we still send the audio to Gemini!
+               if (isAutoMode) {
+                 await handleSendMessage("Listen to this audio.", audioBlob);
+               } else {
+                 setAttachment({ file: audioBlob, preview: null, type: 'audio' });
+                 setInput("Listen to this audio.");
+               }
              }
           } catch(err) {
              console.error(err);
-             alert("Error transcribing voice");
+             alert("Error processing audio");
              if (isAutoMode) setIsConversationMode(false);
           } finally {
              setIsLoading(false);
@@ -101,7 +142,7 @@ export default function Home() {
     if (isRecording) {
       stopRecording();
     } else {
-      setIsConversationMode(false); // manual mic overrides conversation mode
+      setIsConversationMode(false);
       startRecording(false);
     }
   };
@@ -109,10 +150,8 @@ export default function Home() {
   const toggleConversationMode = () => {
     if (isConversationMode) {
       if (isSpeaking) {
-        // Just interrupt her, keep conversation mode on
         window.speechSynthesis.cancel();
       } else {
-        // Exit conversation mode entirely
         setIsConversationMode(false);
         if (isRecording) stopRecording();
       }
@@ -160,13 +199,16 @@ export default function Home() {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       
-      utterance.onstart = () => setIsSpeaking(true);
+      if (selectedVoiceURI) {
+        const voice = voices.find(v => v.voiceURI === selectedVoiceURI);
+        if (voice) utterance.voice = voice;
+      }
       
+      utterance.onstart = () => setIsSpeaking(true);
       utterance.onend = () => {
         setIsSpeaking(false);
         if (onEndCallback) onEndCallback();
       };
-      
       utterance.onerror = () => {
         setIsSpeaking(false);
         if (onEndCallback) onEndCallback();
@@ -178,16 +220,19 @@ export default function Home() {
     }
   };
 
-  const handleSendMessage = async (textOverride = null) => {
+  const handleSendMessage = async (textOverride = null, audioOverride = null) => {
     const textToSend = textOverride !== null ? textOverride : input;
-    if ((!textToSend.trim() && !attachment) || isLoading) return;
+    const finalAudio = audioOverride || (attachment?.type === 'audio' ? attachment.file : null);
+    
+    if ((!textToSend.trim() && !attachment && !finalAudio) || isLoading) return;
 
     const userMessage = {
       role: 'user',
       content: textToSend,
       image: attachment?.type === 'image' ? attachment.preview : undefined,
-      video: attachment?.type === 'video' ? attachment.file.name : undefined, // Basic handling for now
+      video: attachment?.type === 'video' ? attachment.file.name : undefined,
       file: attachment?.type === 'file' ? attachment.file.name : undefined,
+      audio: finalAudio ? 'Audio Recording attached' : undefined,
     };
 
     const newMessages = [...messages, userMessage];
@@ -196,15 +241,17 @@ export default function Home() {
     removeAttachment();
     setIsLoading(true);
 
-    // If we're in conversation mode and we used the mic to send this, 
-    // we don't want to start listening AGAIN until the AI responds.
-    // The loop logic is handled in the response below.
-
     try {
       const formData = new FormData();
       formData.append('messages', JSON.stringify(newMessages));
+      formData.append('systemPrompt', customInstructions);
+      
       if (attachment && (attachment.type === 'video' || attachment.type === 'file')) {
         formData.append('media', attachment.file);
+      }
+      
+      if (finalAudio) {
+        formData.append('audioFile', finalAudio);
       }
 
       const response = await fetch('/api/chat', {
@@ -223,13 +270,9 @@ export default function Home() {
 
       if (isConversationMode || textOverride !== null) {
         speakText(data.reply, () => {
-          if (isConversationMode) {
-            // Loop back to listening when she finishes speaking
-            startRecording(true);
-          }
+          if (isConversationMode) startRecording(true);
         });
       }
-
     } catch (error) {
       console.error(error);
       setMessages(prev => [...prev, {
@@ -254,14 +297,72 @@ export default function Home() {
     }
   };
 
+  // Extract unique languages from available voices
+  const availableLangs = [...new Set(voices.map(v => v.lang))].sort();
+
   return (
     <main className="app-container">
       <header className="header">
-        <div style={{ width: '32px', height: '32px', background: 'var(--accent-gradient)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>
-          LX
+        <div className="header-left">
+          <div style={{ width: '32px', height: '32px', background: 'var(--accent-gradient)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>
+            LX
+          </div>
+          <h1>LEXI</h1>
         </div>
-        <h1>LEXI</h1>
+        <div className="header-right">
+          <button className="action-btn" onClick={toggleTheme} title="Toggle Theme">
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          <button className="action-btn" onClick={() => setIsSettingsOpen(true)} title="Settings">
+            <Settings size={18} />
+          </button>
+        </div>
       </header>
+
+      {/* Settings Modal */}
+      {isSettingsOpen && (
+        <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>LEXI Preferences</h2>
+              <button className="action-btn" onClick={() => setIsSettingsOpen(false)}><X size={18}/></button>
+            </div>
+            
+            <div className="form-group">
+              <label>Personalization Instructions (System Prompt)</label>
+              <textarea 
+                rows={3} 
+                placeholder="e.g. Talk like a pirate, or keep responses under 2 sentences..."
+                value={customInstructions}
+                onChange={e => setCustomInstructions(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Language</label>
+              <select value={selectedLang} onChange={e => setSelectedLang(e.target.value)}>
+                <option value="en-US">English (US)</option>
+                {availableLangs.map(lang => (
+                  <option key={lang} value={lang}>{lang}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>Voice (Text-to-Speech)</label>
+              <select value={selectedVoiceURI} onChange={e => setSelectedVoiceURI(e.target.value)}>
+                {voices.filter(v => v.lang.includes(selectedLang.split('-')[0])).map(voice => (
+                  <option key={voice.voiceURI} value={voice.voiceURI}>
+                    {voice.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button className="modal-close" onClick={() => setIsSettingsOpen(false)}>Save Settings</button>
+          </div>
+        </div>
+      )}
 
       <div className="chat-container">
         {messages.length === 0 && (
@@ -284,15 +385,10 @@ export default function Home() {
                 </button>
               )}
               {msg.content && <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</div>}
-              {msg.image && (
-                <img src={msg.image} alt="User upload" className="message-media" />
-              )}
-              {msg.video && (
-                <div className="message-media file-attachment">🎥 Video: {msg.video}</div>
-              )}
-              {msg.file && (
-                <div className="message-media file-attachment">📄 Document: {msg.file}</div>
-              )}
+              {msg.image && <img src={msg.image} alt="User upload" className="message-media" />}
+              {msg.video && <div className="message-media file-attachment">🎥 Video: {msg.video}</div>}
+              {msg.file && <div className="message-media file-attachment">📄 Document: {msg.file}</div>}
+              {msg.audio && <div className="message-media file-attachment">🎙️ Audio Recording</div>}
             </div>
           </div>
         ))}
@@ -300,9 +396,7 @@ export default function Home() {
         {isLoading && (
           <div className="message-wrapper ai">
             <div className="message-bubble typing-indicator">
-              <div className="dot"></div>
-              <div className="dot"></div>
-              <div className="dot"></div>
+              <div className="dot"></div><div className="dot"></div><div className="dot"></div>
             </div>
           </div>
         )}
@@ -316,32 +410,19 @@ export default function Home() {
               {attachment.type === 'image' && <img src={attachment.preview} alt="Preview" />}
               {attachment.type === 'video' && <div className="file-preview"><Video size={24}/> <span>{attachment.file.name}</span></div>}
               {attachment.type === 'file' && <div className="file-preview"><FileText size={24}/> <span>{attachment.file.name}</span></div>}
-              <button type="button" className="remove-btn" onClick={removeAttachment}>
-                <X size={12} />
-              </button>
+              {attachment.type === 'audio' && <div className="file-preview"><Mic size={24}/> <span>Audio</span></div>}
+              <button type="button" className="remove-btn" onClick={removeAttachment}><X size={12} /></button>
             </div>
           </div>
         )}
         
         <div className="input-row">
-          <input
-            type="file"
-            style={{ display: 'none' }}
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-          />
+          <input type="file" style={{ display: 'none' }} ref={fileInputRef} onChange={handleFileUpload} />
           
-          {/* Attachment Menu */}
           <div style={{ position: 'relative' }}>
-            <button 
-              type="button" 
-              className="action-btn" 
-              onClick={() => setIsAttachmentMenuOpen(!isAttachmentMenuOpen)}
-              title="Add Attachment"
-            >
+            <button type="button" className="action-btn" onClick={() => setIsAttachmentMenuOpen(!isAttachmentMenuOpen)} title="Add Attachment">
               <Plus size={20} />
             </button>
-            
             {isAttachmentMenuOpen && (
               <div className="attachment-menu">
                 <button type="button" onClick={() => triggerFileInput('image/*')}><ImageIcon size={16}/> Image</button>
@@ -351,21 +432,11 @@ export default function Home() {
             )}
           </div>
           
-          <button 
-            type="button" 
-            className={`action-btn ${isConversationMode ? 'recording' : ''}`}
-            onClick={toggleConversationMode}
-            title="Conversation Mode (Sound Wave)"
-          >
+          <button type="button" className={`action-btn ${isConversationMode ? 'recording' : ''}`} onClick={toggleConversationMode} title="Conversation Mode (Sound Wave)">
              <Activity size={20} className={isConversationMode ? 'pulse-anim' : ''} />
           </button>
 
-          <button 
-            type="button" 
-            className={`action-btn ${isRecording && !isConversationMode ? 'recording' : ''}`}
-            onClick={toggleRecording}
-            title="Manual Voice Input"
-          >
+          <button type="button" className={`action-btn ${isRecording && !isConversationMode ? 'recording' : ''}`} onClick={toggleRecording} title="Manual Voice Input">
             {isRecording && !isConversationMode ? <Square size={16} fill="currentColor" /> : <Mic size={20} />}
           </button>
 
@@ -380,11 +451,7 @@ export default function Home() {
             disabled={isConversationMode}
           />
 
-          <button 
-            type="submit" 
-            className="action-btn primary"
-            disabled={(!input.trim() && !attachment) || isLoading || isConversationMode}
-          >
+          <button type="submit" className="action-btn primary" disabled={(!input.trim() && !attachment) || isLoading || isConversationMode}>
             <Send size={18} />
           </button>
         </div>

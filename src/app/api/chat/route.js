@@ -6,7 +6,6 @@ import path from 'path';
 import os from 'os';
 
 // Initialize Hugging Face Inference client
-// Ensure you have HF_TOKEN in your .env.local file
 const hf = new HfInference(process.env.HF_TOKEN);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
@@ -15,13 +14,15 @@ export async function POST(req) {
   try {
     const formData = await req.formData();
     const messagesStr = formData.get('messages');
+    const customSystemPrompt = formData.get('systemPrompt');
     
     if (!messagesStr) {
       return new Response(JSON.stringify({ error: 'Messages are required' }), { status: 400 });
     }
 
     const messages = JSON.parse(messagesStr);
-    const mediaFile = formData.get('media'); // File object
+    const mediaFile = formData.get('media'); // Video/File object
+    const audioFile = formData.get('audioFile'); // Raw mic audio object
     const latestMessage = messages[messages.length - 1];
 
     let caption = null;
@@ -30,19 +31,16 @@ export async function POST(req) {
     if (mediaFile && (latestMessage.video || latestMessage.file)) {
       const bytes = await mediaFile.arrayBuffer();
       const buffer = Buffer.from(bytes);
-      // sanitize filename
       const safeName = mediaFile.name.replace(/[^a-zA-Z0-9.-]/g, '_');
       const tempFilePath = path.join(os.tmpdir(), `${Date.now()}_${safeName}`);
       
       await writeFile(tempFilePath, buffer);
       
-      // Upload to Gemini
       const uploadResponse = await fileManager.uploadFile(tempFilePath, {
         mimeType: mediaFile.type,
         displayName: mediaFile.name,
       });
 
-      // Poll until processed if it's a video
       let file = await fileManager.getFile(uploadResponse.file.name);
       while (file.state === "PROCESSING") {
         await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -63,10 +61,23 @@ export async function POST(req) {
       ]);
       
       caption = result.response.text();
-      
-      // Cleanup temp file
       await unlink(tempFilePath).catch(console.error);
     } 
+    // Handle inline Native Audio
+    else if (audioFile) {
+      const bytes = await audioFile.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      const base64Data = buffer.toString('base64');
+      
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      const prompt = `Listen to this audio carefully. It may contain speech, music, or both. Describe the audio or answer the user's spoken request if present.`;
+      
+      const result = await model.generateContent([
+        prompt,
+        { inlineData: { data: base64Data, mimeType: audioFile.type || 'audio/webm' } }
+      ]);
+      caption = result.response.text();
+    }
     // Handle inline base64 images
     else if (latestMessage.image) {
       const base64Data = latestMessage.image.split(',')[1];
@@ -80,14 +91,18 @@ export async function POST(req) {
       caption = result.response.text();
     }
 
-    // Now send to Qwen if necessary (for text context)
-    const systemMessage = { role: 'system', content: 'You are LEXI, a multimodal AI assistant. You are here to help the user in any kind of task that is required. Always identify yourself as LEXI if asked.' };
+    // Prepare Custom System Prompt
+    const finalSystemPrompt = customSystemPrompt && customSystemPrompt.trim().length > 0 
+      ? `You are LEXI. ${customSystemPrompt}` 
+      : 'You are LEXI, a multimodal AI assistant. You are here to help the user in any kind of task that is required. Always identify yourself as LEXI if asked.';
+
+    const systemMessage = { role: 'system', content: finalSystemPrompt };
     
     if (caption) {
       let finalReply = caption;
-      // We pass the caption as context to the LLM
-      if (latestMessage.content.trim()) {
-        const textPrompt = `The user uploaded an attachment. The attachment analysis: "${caption}".\n\nThe user asked: "${latestMessage.content}"\n\nPlease answer the user's question based on the analysis.`;
+      // We pass the caption/audio-analysis as context to the LLM if they asked a specific text question too
+      if (latestMessage.content && latestMessage.content.trim() && latestMessage.content !== "Listen to this audio.") {
+        const textPrompt = `The user uploaded an attachment or audio. The multimodal analysis is: "${caption}".\n\nThe user also asked: "${latestMessage.content}"\n\nPlease answer the user's question based on the analysis.`;
         
         const textResponse = await hf.chatCompletion({
           model: 'Qwen/Qwen2.5-72B-Instruct',
@@ -99,7 +114,7 @@ export async function POST(req) {
       }
       return new Response(JSON.stringify({ reply: finalReply }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     } else {
-      // Text-only request (with memory)
+      // Text-only request
       const formattedMessages = messages.map(msg => ({
         role: msg.role === 'assistant' ? 'assistant' : 'user',
         content: msg.content
