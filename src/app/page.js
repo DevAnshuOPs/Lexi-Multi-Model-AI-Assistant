@@ -66,7 +66,7 @@ export default function Home() {
   // Initialize Data
   useEffect(() => {
     if (session) {
-      fetchChats();
+      fetchChats(true);
     }
 
     const loadVoices = () => {
@@ -87,11 +87,14 @@ export default function Home() {
     }
   }, [theme]);
 
-  const fetchChats = async () => {
+  const fetchChats = async (autoLoadLatest = false) => {
     try {
       const res = await fetch('/api/chats');
       const data = await res.json();
       setChats(data);
+      if (autoLoadLatest && data.length > 0 && !currentChatId) {
+        loadChat(data[0].id);
+      }
     } catch (e) {
       console.error(e);
     }
