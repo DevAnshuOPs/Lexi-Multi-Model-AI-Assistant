@@ -272,11 +272,20 @@ export default function Home() {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = selectedLang;
       
+      let voice = null;
       if (selectedVoiceURI) {
-        const voice = voices.find(v => v.voiceURI === selectedVoiceURI);
-        if (voice) utterance.voice = voice;
+        voice = voices.find(v => v.voiceURI === selectedVoiceURI);
       }
+      
+      // If the selected voice doesn't match the selected language, auto-fallback to a native voice
+      if (voice && !voice.lang.startsWith(selectedLang.split('-')[0])) {
+        const matchingVoice = voices.find(v => v.lang.startsWith(selectedLang.split('-')[0]));
+        if (matchingVoice) voice = matchingVoice;
+      }
+
+      if (voice) utterance.voice = voice;
       
       utterance.onstart = () => setSpeakingIndex(index);
       utterance.onend = () => {
