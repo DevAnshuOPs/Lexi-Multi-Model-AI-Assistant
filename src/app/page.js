@@ -674,7 +674,7 @@ export default function Home() {
                 <div className="attachment-menu">
                   <button type="button" onClick={() => triggerFileInput('image/*')}><ImageIcon size={16}/> Image</button>
                   <button type="button" onClick={() => triggerFileInput('video/*')}><Video size={16}/> Video</button>
-                  <button type="button" onClick={() => triggerFileInput('.pdf,.txt,.doc,.docx')}><FileText size={16}/> Document</button>
+                  <button type="button" onClick={() => triggerFileInput('.pdf,.txt,.md,.csv,.rtf')}><FileText size={16}/> Document</button>
                 </div>
               )}
             </div>

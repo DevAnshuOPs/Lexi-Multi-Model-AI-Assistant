@@ -46,31 +46,37 @@ export async function POST(req) {
       
       await writeFile(tempFilePath, buffer);
       
-      const uploadResponse = await fileManager.uploadFile(tempFilePath, {
-        mimeType: mediaFile.type,
-        displayName: mediaFile.name,
-      });
+      try {
+        const uploadResponse = await fileManager.uploadFile(tempFilePath, {
+          mimeType: mediaFile.type,
+          displayName: mediaFile.name,
+        });
 
-      let file = await fileManager.getFile(uploadResponse.file.name);
-      while (file.state === "PROCESSING") {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        file = await fileManager.getFile(uploadResponse.file.name);
-      }
+        let file = await fileManager.getFile(uploadResponse.file.name);
+        while (file.state === "PROCESSING") {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          file = await fileManager.getFile(uploadResponse.file.name);
+        }
 
-      if (file.state === "FAILED") {
+        if (file.state === "FAILED") {
+          await unlink(tempFilePath).catch(console.error);
+          return new Response(JSON.stringify({ error: 'Document/Video processing failed in Gemini' }), { status: 500 });
+        }
+
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const prompt = `Please analyze this attached file in detail. User asked: "${latestMessage.content}"`;
+        
+        const result = await model.generateContent([
+          { fileData: { mimeType: uploadResponse.file.mimeType, fileUri: uploadResponse.file.uri } },
+          { text: prompt },
+        ]);
+        
+        caption = result.response.text();
+      } catch (uploadError) {
         await unlink(tempFilePath).catch(console.error);
-        return new Response(JSON.stringify({ error: 'Video processing failed in Gemini' }), { status: 500 });
+        return new Response(JSON.stringify({ error: `File Analysis Error: ${uploadError.message}. Make sure you are using a supported file type (.txt, .pdf, .csv, .md).` }), { status: 400 });
       }
-
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-      const prompt = `Please analyze this attached file in detail. User asked: "${latestMessage.content}"`;
       
-      const result = await model.generateContent([
-        { fileData: { mimeType: uploadResponse.file.mimeType, fileUri: uploadResponse.file.uri } },
-        { text: prompt },
-      ]);
-      
-      caption = result.response.text();
       await unlink(tempFilePath).catch(console.error);
     } 
     // Handle inline Native Audio
@@ -112,7 +118,9 @@ export async function POST(req) {
     if (caption) {
       finalReply = caption;
       if (latestMessage.content && latestMessage.content.trim() && latestMessage.content !== "Listen to this audio.") {
-        const textPrompt = `The user uploaded an attachment or audio. The multimodal analysis is: "${caption}".\n\nThe user also asked: "${latestMessage.content}"\n\nPlease answer the user's question based on the analysis.`;
+        // Truncate caption to prevent HuggingFace input token limit errors on large documents
+        const truncatedCaption = caption.length > 4000 ? caption.substring(0, 4000) + '... (truncated)' : caption;
+        const textPrompt = `The user uploaded an attachment or audio. The multimodal analysis is: "${truncatedCaption}".\n\nThe user also asked: "${latestMessage.content}"\n\nPlease answer the user's question based on the analysis.`;
         
         const textResponse = await hf.chatCompletion({
           model: 'Qwen/Qwen2.5-72B-Instruct',
