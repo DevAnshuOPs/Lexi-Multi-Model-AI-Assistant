@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Image as ImageIcon, Mic, Square, X, Volume2, Plus, Activity, FileText, Video, Settings, Sun, Moon, MessageSquare, PlusCircle, Trash2, LogOut } from 'lucide-react';
+import { Send, Image as ImageIcon, Mic, Square, X, Volume2, Plus, Activity, FileText, Video, Settings, Sun, Moon, MessageSquare, PlusCircle, Trash2, LogOut, Menu } from 'lucide-react';
 import { useSession, signIn, signOut } from 'next-auth/react';
 
 const LexiLogo = ({ size = 32 }) => (
@@ -71,6 +71,7 @@ export default function Home() {
   
   // Settings & Personalization State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [theme, setTheme] = useState('dark');
   const [customInstructions, setCustomInstructions] = useState('');
   const [selectedLang, setSelectedLang] = useState('en-US');
@@ -147,6 +148,7 @@ export default function Home() {
 
   const loadChat = async (id) => {
     setIsLoading(true);
+    setIsMobileSidebarOpen(false);
     try {
       const res = await fetch(`/api/chats/${id}`);
       const data = await res.json();
@@ -162,6 +164,7 @@ export default function Home() {
   const startNewChat = () => {
     setCurrentChatId(null);
     setMessages([]);
+    setIsMobileSidebarOpen(false);
   };
 
   const deleteChat = async (id, e) => {
@@ -512,8 +515,10 @@ export default function Home() {
 
   return (
     <div className="layout-container">
+      <div className={`mobile-overlay ${isMobileSidebarOpen ? 'open' : ''}`} onClick={() => setIsMobileSidebarOpen(false)}></div>
+      
       {/* Sidebar for Chat History */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${isMobileSidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <button className="new-chat-btn" onClick={startNewChat}>
             <PlusCircle size={18} /> New Chat
@@ -554,6 +559,9 @@ export default function Home() {
         
         <header className="header" style={{ position: 'relative', zIndex: 2 }}>
           <div className="header-left">
+            <button className="mobile-menu-btn" onClick={() => setIsMobileSidebarOpen(true)}>
+              <Menu size={24} />
+            </button>
             <LexiLogo size={32} />
             <h1>LEXI</h1>
           </div>
