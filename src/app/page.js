@@ -92,13 +92,16 @@ export default function Home() {
       fetchChats();
       fetchSettings();
     }
-    
+  }, [session]);
+
+  // Update Theme Class
+  useEffect(() => {
     if (theme === 'light') {
       document.documentElement.classList.add('light-mode');
     } else {
       document.documentElement.classList.remove('light-mode');
     }
-  }, [session, theme]);
+  }, [theme]);
 
   // Global mouse tracker for ambient slime glow
   useEffect(() => {
