@@ -75,3 +75,58 @@ If asked to trace a single request during a Viva, describe this flow:
 6. The text response is immediately routed to `/api/tts`.
 7. Google's Cloud ML generates MP3 speech buffers and streams them to the client.
 8. The React frontend plays the audio queue while the dynamic UI reacts to the user's mouse.
+
+---
+
+## 💻 4. Code Snippets & References
+
+### 4.1 Chat API (`/api/chat`)
+This route handles multimodal file processing, truncates context limits, and integrates the Gemini SDK.
+```javascript
+// Excerpt from src/app/api/chat/route.js
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+const prompt = `Please analyze this attached file in detail. User asked: "${latestMessage.content}"`;
+
+// Multimodal File Analysis
+const result = await model.generateContent([
+  { fileData: { mimeType: uploadResponse.file.mimeType, fileUri: uploadResponse.file.uri } },
+  { text: prompt },
+]);
+caption = result.response.text();
+```
+
+### 4.2 AI Processing Pipeline (Whisper ASR Integration)
+This pipeline converts raw microphone `audio/webm` blobs into text transcripts using HuggingFace serverless inference.
+```javascript
+// Excerpt from src/app/api/transcribe/route.js
+const response = await hf.automaticSpeechRecognition({
+  model: 'openai/whisper-large-v3-turbo',
+  data: blob
+});
+return new Response(JSON.stringify({ text: response.text }), { status: 200 });
+```
+
+### 4.3 Database Schema (Prisma)
+Defines the relational mappings for Users, OAuth Sessions, and Chat Message Histories in PostgreSQL.
+```prisma
+// Excerpt from prisma/schema.prisma
+model User {
+  id            String    @id @default(cuid())
+  email         String?   @unique
+  theme         String?   @default("dark")
+  instructions  String?   @db.Text
+  chats         Chat[]
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  role      String   // 'user' or 'assistant'
+  content   String   @db.Text
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+```
+
+### 4.4 User Interface
+*(Insert screenshots of your deployed application here. Recommended: Desktop Dark Mode, Desktop Light Mode, and Mobile layout)*
