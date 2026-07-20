@@ -474,7 +474,7 @@ export default function Home() {
 
   if (status === 'loading') {
     return (
-      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-color)', color: 'var(--text-primary)' }}>
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', color: 'var(--text-primary)' }}>
         <div className="pulse-anim"><LexiLogo size={80} /></div>
       </div>
     );
@@ -482,7 +482,7 @@ export default function Home() {
 
   if (!session) {
     return (
-      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-color)' }}>
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(168, 85, 247, 0.05)' }}>
         <div className="modal-content" style={{ maxWidth: '400px', width: '90%', textAlign: 'center', padding: '3rem 2rem' }}>
           <div style={{ margin: '0 auto 1.5rem', display: 'flex', justifyContent: 'center' }}>
             <LexiLogo size={64} />
