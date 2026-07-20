@@ -34,49 +34,6 @@
   --ai-msg-border: rgba(0, 0, 0, 0.1);
 }
 
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-body {
-  background-color: var(--bg-color);
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
-:root {
-  --bg-color: #0d0f12;
-  --panel-bg: rgba(22, 25, 30, 0.65);
-  --panel-border: rgba(255, 255, 255, 0.08);
-  --text-primary: #f0f2f5;
-  --text-secondary: #a0a8b5;
-  --accent-color: #6366f1;
-  --accent-glow: rgba(99, 102, 241, 0.4);
-  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-  
-  --user-msg-bg: rgba(99, 102, 241, 0.15);
-  --user-msg-border: rgba(99, 102, 241, 0.3);
-  
-  --ai-msg-bg: rgba(30, 34, 40, 0.6);
-  --ai-msg-border: rgba(255, 255, 255, 0.05);
-  
-  --danger-color: #ef4444;
-  --success-color: #10b981;
-}
-
-:root.light-mode {
-  --bg-color: #f8fafc;
-  --panel-bg: rgba(255, 255, 255, 0.85);
-  --panel-border: rgba(0, 0, 0, 0.1);
-  --text-primary: #1e293b;
-  --text-secondary: #64748b;
-  
-  --user-msg-bg: rgba(99, 102, 241, 0.1);
-  --user-msg-border: rgba(99, 102, 241, 0.2);
-  
-  --ai-msg-bg: #ffffff;
-  --ai-msg-border: rgba(0, 0, 0, 0.1);
-}
 
 * {
   box-sizing: border-box;
