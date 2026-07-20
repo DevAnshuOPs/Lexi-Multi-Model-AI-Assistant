@@ -102,9 +102,10 @@ export async function POST(req) {
     }
 
     // Prepare Custom System Prompt
+    const conciseInstruction = " Keep your responses short, simple, concise, and conversational.";
     const finalSystemPrompt = customSystemPrompt && customSystemPrompt.trim().length > 0 
-      ? `You are LEXI. ${customSystemPrompt}` 
-      : 'You are LEXI, a multimodal AI assistant. You are here to help the user in any kind of task that is required. Always identify yourself as LEXI if asked.';
+      ? `You are LEXI. ${customSystemPrompt}${conciseInstruction}` 
+      : `You are LEXI, a multimodal AI assistant. You are here to help the user in any kind of task that is required. Always identify yourself as LEXI if asked.${conciseInstruction}`;
 
     const systemMessage = { role: 'system', content: finalSystemPrompt };
     
@@ -116,7 +117,7 @@ export async function POST(req) {
         const textResponse = await hf.chatCompletion({
           model: 'Qwen/Qwen2.5-72B-Instruct',
           messages: [systemMessage, { role: 'user', content: textPrompt }],
-          max_tokens: 500,
+        max_tokens: 2048,
           temperature: 0.7
         });
         finalReply = textResponse.choices[0].message.content.trim();
@@ -131,7 +132,7 @@ export async function POST(req) {
       const textResponse = await hf.chatCompletion({
         model: 'Qwen/Qwen2.5-72B-Instruct',
         messages: formattedMessages,
-        max_tokens: 500,
+        max_tokens: 2048,
         temperature: 0.7
       });
       finalReply = textResponse.choices[0].message.content.trim();
