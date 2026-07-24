@@ -129,4 +129,4 @@ model Message {
 ```
 
 ### 4.4 User Interface
-*(Insert screenshots of your deployed application here. Recommended: Desktop Dark Mode, Desktop Light Mode, and Mobile layout)*
+Vercel Link: https://lexi-multi-model-ai-assistant.vercel.app/
